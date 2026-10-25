@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MBEXPRESS - Sistema de Controle de Entregas</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fffbeb',
+              100: '#fef3c7',
+              200: '#fde68a',
+              300: '#fcd34d',
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309',
+              800: '#92400e',
+              900: '#78350f',
+            },
+            dark: {
+              bg: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+              input: '#0f172a',
+              hover: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #d97706; }
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      user-select: none;
+    }
+  </style>
+</head>
+<body class="bg-dark-bg text-slate-100 min-h-screen">
+
+  <div id="root"></div>
+
+  <script>
+    const e = React.createElement;
+    const { useState, useEffect, useMemo } = React;
+
+    // Default Seed Data
+    const INITIAL_DRIVERS = Array.from({ length: 10 }, (_, i) => ({
+      id: `${i + 1}`,
+      name: ['Carlos Silva', 'João Santos', 'Marcos Oliveira', 'Ana Souza', 'Lucas Pereira', 'Fernando Costa', 'Rafael Lima', 'Bruno Alves', 'Gabriel Rocha', 'Diego Martins'][i],
+      pin: '1234',
+      active: true
+    }));
+
+    const INITIAL_STORES = [
+      { id: '1', name: 'Burguer King - Centro' },
+      { id: '2', name: 'Restaurante Sabor Real' },
+      { id: '3', name: 'Pizzaria Bella Napoli' },
+      { id: '4', name: 'Sushi Bar Express' },
+      { id: '5', name: 'Padaria Pão D\'Ouro' }
+    ];
+
+    const getTodayStr = () => new Date().toISOString().split('T')[0];
+    const getSevenDaysAgoStr = () => {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      return d.toISOString().split('T')[0];
+    };
+
+    const INITIAL_REPORTS = [
+      {
+        id: 'rep-101',
+        driverId: '1',
+        driverName: 'Carlos Silva',
+        date: getTodayStr(),
+        items: [
+          { storeId: '1', storeName: 'Burguer King - Centro', count: 12, value: 144.00 },
+          { storeId: '2', storeName: 'Restaurante Sabor Real', count: 8, value: 96.00 }
+        ],
+        totalCount: 20,
+        totalValue: 240.00,
+        obs: 'Entregas do almoço e janta.',
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'rep-102',
+        driverId: '2',
+        driverName: 'João Santos',
+        date: getTodayStr(),
+        items: [
+          { storeId: '1', storeName: 'Burguer King - Centro', count: 10, value: 120.00 },
+          { storeId: '3', storeName: 'Pizzaria Bella Napoli', count: 15, value: 195.00 }
+        ],
+        totalCount: 25,
+        totalValue: 315.00,
+        obs: 'Turno finalizado.',
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    const INITIAL_OFFICIAL_RECORDS = {
+      [`1_${getTodayStr()}`]: { officialCount: 22, officialValue: 264.00 }
+    };
+
+    const formatBRL = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
+    const formatDateBR = (dateStr) => {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+    };
+
+    const formatDateShort = (dateStr) => {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      return parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
+    };
+
+    const generateDateRange = (startStr, endStr) => {
+      const dates = [];
+      if (!startStr || !endStr) return dates;
+      let curr = new Date(startStr + 'T00:00:00');
+      const end = new Date(endStr + 'T00:00:00');
+      if (curr > end) return [startStr];
+      while (curr <= end) {
+        dates.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+      }
+      return dates;
+    };
+
+    // Main App Component
+    function App() {
+      const [drivers, setDrivers] = useState(() => JSON.parse(localStorage.getItem('mbexpress_drivers')) || INITIAL_DRIVERS);
+      const [stores, setStores] = useState(() => JSON.parse(localStorage.getItem('mbexpress_stores')) || INITIAL_STORES);
+      const [reports, setReports] = useState(() => JSON.parse(localStorage.getItem('mbexpress_reports')) || INITIAL_REPORTS);
+      const [officialRecords, setOfficialRecords] = useState(() => JSON.parse(localStorage.getItem('mbexpress_official_map')) || INITIAL_OFFICIAL_RECORDS);
+      const [userSession, setUserSession] = useState(() => JSON.parse(localStorage.getItem('mbexpress_session')) || null);
+      const [activeTab, setActiveTab] = useState('new_report');
+
+      useEffect(() => { localStorage.setItem('mbexpress_drivers', JSON.stringify(drivers)); }, [drivers]);
+      useEffect(() => { localStorage.setItem('mbexpress_stores', JSON.stringify(stores)); }, [stores]);
+      useEffect(() => { localStorage.setItem('mbexpress_reports', JSON.stringify(reports)); }, [reports]);
+      useEffect(() => { localStorage.setItem('mbexpress_official_map', JSON.stringify(officialRecords)); }, [officialRecords]);
+      useEffect(() => { localStorage.setItem('mbexpress_session', JSON.stringify(userSession)); }, [userSession]);
+
+      useEffect(() => {
+        if (userSession?.role === 'admin') setActiveTab('reconciliation');
+        else if (userSession?.role === 'driver') setActiveTab('new_report');
+      }, [userSession?.role]);
+
+      useEffect(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+
+      if (!userSession) {
+        return e(LoginScreen, { drivers, onLogin: setUserSession });
+      }
+
+      return e('div', { className: 'min-h-screen flex flex-col bg-dark-bg text-slate-100 pb-20 md:pb-0' },
+        e('header', { className: 'bg-dark-card border-b border-dark-border px-4 py-3 sticky top-0 z-40 flex items-center justify-between shadow-xl' },
+          e('div', { className: 'flex items-center gap-3' },
+            e('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center font-black text-black text-xl tracking-tighter shadow-md border border-brand-400' }, 'MB'),
+            e('div', null,
+              e('h1', { className: 'font-extrabold text-lg sm:text-xl tracking-wider text-white flex items-center gap-1.5' },
+                'MB', e('span', { className: 'text-brand-400' }, 'EXPRESS')
+              ),
+              e('p', { className: 'text-[11px] text-slate-400 flex items-center gap-1' },
+                userSession.role === 'admin' ? 'Painel do Administrador' : `Entregador: ${userSession.name}`
+              )
+            )
+          ),
+          e('button', {
+            onClick: () => setUserSession(null),
+            className: 'flex items-center gap-2 bg-dark-bg hover:bg-slate-800 text-slate-300 hover:text-brand-400 px-3 py-1.5 rounded-xl border border-dark-border text-xs font-semibold transition'
+          }, 'Sair')
+        ),
+        e('div', { className: 'flex-1 flex max-w-7xl w-full mx-auto' },
+          userSession.role === 'admin' && e('aside', { className: 'hidden md:flex flex-col w-64 bg-dark-card border-r border-dark-border p-4 gap-2 shrink-0' },
+            e(SidebarBtn, { id: 'reconciliation', label: 'Batimento Dia a Dia', activeTab, setActiveTab }),
+            e(SidebarBtn, { id: 'all_reports', label: 'Todos os Relatórios', activeTab, setActiveTab }),
+            e(SidebarBtn, { id: 'manage_drivers', label: 'Entregadores', activeTab, setActiveTab }),
+            e(SidebarBtn, { id: 'manage_stores', label: 'Estabelecimentos', activeTab, setActiveTab })
+          ),
+          e('main', { className: 'flex-1 p-4 md:p-6 max-w-6xl mx-auto w-full overflow-x-hidden' },
+            userSession.role === 'driver' && (
+              activeTab === 'new_report' 
+                ? e(NewReportForm, { driver: userSession, stores, onSubmit: (rep) => { setReports([rep, ...reports]); setActiveTab('my_reports'); } })
+                : e(DriverMyReports, { driverId: userSession.id, reports })
+            ),
+            userSession.role === 'admin' && (
+              activeTab === 'reconciliation' ? e(AdminMatrixReconciliation, { reports, stores, officialRecords, setOfficialRecords }) :
+              activeTab === 'all_reports' ? e(AdminGeneralReports, { reports, drivers, setReports }) :
+              activeTab === 'manage_drivers' ? e(AdminManageDrivers, { drivers, setDrivers }) :
+              e(AdminManageStores, { stores, setStores })
+            )
+          )
+        ),
+        e('nav', { className: 'md:hidden fixed bottom-0 left-0 right-0 bg-dark-card border-t border-dark-border px-2 py-2 z-50 flex justify-around items-center' },
+          userSession.role === 'driver' ? [
+            e(NavTabBtn, { key: '1', id: 'new_report', label: 'Novo Envio', activeTab, setActiveTab }),
+            e(NavTabBtn, { key: '2', id: 'my_reports', label: 'Meus Envios', activeTab, setActiveTab })
+          ] : [
+            e(NavTabBtn, { key: '1', id: 'reconciliation', label: 'Batimento', activeTab, setActiveTab }),
+            e(NavTabBtn, { key: '2', id: 'all_reports', label: 'Relatórios', activeTab, setActiveTab }),
+            e(NavTabBtn, { key: '3', id: 'manage_drivers', label: 'Equipe', activeTab, setActiveTab }),
+            e(NavTabBtn, { key: '4', id: 'manage_stores', label: 'Lojas', activeTab, setActiveTab })
+          ]
+        )
+      );
+    }
+
+    function SidebarBtn({ id, label, activeTab, setActiveTab }) {
+      const active = activeTab === id;
+      return e('button', {
+        onClick: () => setActiveTab(id),
+        className: `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all text-left ${
+          active ? 'bg-brand-600 text-black font-bold shadow-lg' : 'text-slate-300 hover:bg-dark-hover hover:text-white'
+        }`
+      }, label);
+    }
+
+    function NavTabBtn({ id, label, activeTab, setActiveTab }) {
+      const active = activeTab === id;
+      return e('button', {
+        onClick: () => setActiveTab(id),
+        className: `flex flex-col items-center py-1 px-2 rounded-lg transition ${active ? 'text-brand-400 font-bold' : 'text-slate-400'}`
+      }, e('span', { className: 'text-xs' }, label));
+    }
+
+    function LoginScreen({ drivers, onLogin }) {
+      const [loginType, setLoginType] = useState('driver');
+      const [selectedDriverId, setSelectedDriverId] = useState('');
+      const [pin, setPin] = useState('');
+      const [adminPin, setAdminPin] = useState('');
+      const [errorMsg, setErrorMsg] = useState('');
+
+      const handleDriverLogin = (ev) => {
+        ev.preventDefault();
+        const driver = drivers.find(d => d.id === selectedDriverId);
+        if (driver && driver.pin === pin) {
+          onLogin({ role: 'driver', id: driver.id, name: driver.name });
+        } else {
+          setErrorMsg('PIN Incorreto. (Padrão: 1234)');
+        }
+      };
+
+      const handleAdminLogin = (ev) => {
+        ev.preventDefault();
+        if (adminPin === 'admin123' || adminPin === '8888') {
+          onLogin({ role: 'admin', id: 'admin', name: 'Administrador MBEXPRESS' });
+        } else {
+          setErrorMsg('Senha Master Incorreta. (Padrão: admin123)');
+        }
+      };
+
+      return e('div', { className: 'min-h-screen flex items-center justify-center p-4 bg-dark-bg' },
+        e('div', { className: 'bg-dark-card border border-dark-border rounded-2xl w-full max-w-md p-6 shadow-2xl relative' },
+          e('div', { className: 'text-center mb-8' },
+            e('div', { className: 'inline-flex w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 items-center justify-center font-black text-black text-3xl mb-3 border border-brand-400' }, 'MB'),
+            e('h1', { className: 'text-2xl font-black text-white' }, 'MB', e('span', { className: 'text-brand-400' }, 'EXPRESS')),
+            e('p', { className: 'text-xs text-slate-400 mt-1' }, 'Sistema de Controle de Entregas')
+          ),
+          e('div', { className: 'grid grid-cols-2 bg-dark-input p-1 rounded-xl mb-6 border border-dark-border' },
+            e('button', {
+              onClick: () => { setLoginType('driver'); setErrorMsg(''); },
+              className: `py-2 text-xs font-bold rounded-lg ${loginType === 'driver' ? 'bg-brand-600 text-black' : 'text-slate-400'}`
+            }, 'Entregador'),
+            e('button', {
+              onClick: () => { setLoginType('admin'); setErrorMsg(''); },
+              className: `py-2 text-xs font-bold rounded-lg ${loginType === 'admin' ? 'bg-brand-600 text-black' : 'text-slate-400'}`
+            }, 'Administrador')
+          ),
+          errorMsg && e('div', { className: 'mb-4 p-3 bg-red-950 text-red-200 text-xs rounded-xl' }, errorMsg),
+          loginType === 'driver' ? e('form', { onSubmit: handleDriverLogin, className: 'space-y-4' },
+            e('div', null,
+              e('label', { className: 'block text-xs text-slate-300 mb-1' }, 'Selecione seu Nome'),
+              e('select', {
+                value: selectedDriverId,
+                onChange: ev => setSelectedDriverId(ev.target.value),
+                className: 'w-full bg-dark-input border border-dark-border rounded-xl p-2.5 text-sm text-white'
+              },
+                e('option', { value: '' }, '-- Selecione --'),
+                drivers.filter(d => d.active).map(d => e('option', { key: d.id, value: d.id }, d.name))
+              )
+            ),
+            e('div', null,
+              e('label', { className: 'block text-xs text-slate-300 mb-1' }, 'PIN (4 dígitos)'),
+              e('input', {
+                type: 'password',
+                maxLength: 4,
+                value: pin,
+                onChange: ev => setPin(ev.target.value),
+                className: 'w-full bg-dark-input border border-dark-border rounded-xl p-2.5 text-sm text-center text-white'
+              })
+            ),
+            e('button', { type: 'submit', className: 'w-full bg-brand-600 text-black font-bold py-3 rounded-xl' }, 'Entrar como Entregador')
+          ) : e('form', { onSubmit: handleAdminLogin, className: 'space-y-4' },
+            e('div', null,
+              e('label', { className: 'block text-xs text-slate-300 mb-1' }, 'Senha Administrador'),
+              e('input', {
+                type: 'password',
+                value: adminPin,
+                onChange: ev => setAdminPin(ev.target.value),
+                className: 'w-full bg-dark-input border border-dark-border rounded-xl p-2.5 text-sm text-white'
+              })
+            ),
+            e('button', { type: 'submit', className: 'w-full bg-brand-600 text-black font-bold py-3 rounded-xl' }, 'Acessar Painel')
+          )
+        )
+      );
+    }
+
+    function NewReportForm({ driver, stores, onSubmit }) {
+      const [date, setDate] = useState(getTodayStr());
+      const [obs, setObs] = useState('');
+      const [rows, setRows] = useState([{ id: 1, storeId: '', count: '', value: '' }]);
+
+      const handleAddRow = () => setRows([...rows, { id: Date.now(), storeId: '', count: '', value: '' }]);
+      const handleRowChange = (idx, field, val) => {
+        const copy = [...rows];
+        copy[idx][field] = val;
+        setRows(copy);
+      };
+
+      const totalCount = useMemo(() => rows.reduce((acc, r) => acc + (parseInt(r.count) || 0), 0), [rows]);
+      const totalValue = useMemo(() => rows.reduce((acc, r) => acc + (parseFloat(r.value) || 0), 0), [rows]);
+
+      const handleSubmit = (ev) => {
+        ev.preventDefault();
+        const formattedItems = rows.map(r => {
+          const st = stores.find(s => s.id === r.storeId);
+          return { storeId: r.storeId, storeName: st ? st.name : 'Loja', count: parseInt(r.count) || 0, value: parseFloat(r.value) || 0 };
+        });
+
+        onSubmit({
+          id: 'rep-' + Date.now(),
+          driverId: driver.id,
+          driverName: driver.name,
+          date,
+          items: formattedItems,
+          totalCount,
+          totalValue,
+          obs,
+          createdAt: new Date().toISOString()
+        });
+      };
+
+      return e('form', { onSubmit: handleSubmit, className: 'space-y-6' },
+        e('div', { className: 'bg-dark-card p-4 rounded-2xl border border-dark-border' },
+          e('h2', { className: 'text-lg font-bold text-white mb-2' }, 'Enviar Relatório de Entregas'),
+          e('label', { className: 'block text-xs text-slate-300 mb-1' }, 'Data do Trabalho'),
+          e('input', { type: 'date', value: date, onChange: ev => setDate(ev.target.value), className: 'bg-dark-input border border-dark-border rounded-xl p-2 text-sm text-white' })
+        ),
+        e('div', { className: 'bg-dark-card p-4 rounded-2xl border border-dark-border space-y-4' },
+          rows.map((r, idx) => e('div', { key: r.id, className: 'flex flex-col sm:flex-row gap-2' },
+            e('select', {
+              value: r.storeId,
+              onChange: ev => handleRowChange(idx, 'storeId', ev.target.value),
+              className: 'flex-1 bg-dark-input border border-dark-border rounded-xl p-2 text-xs text-white'
+            },
+              e('option', { value: '' }, 'Selecione a Loja'),
+              stores.map(s => e('option', { key: s.id, value: s.id }, s.name))
+            ),
+            e('input', {
+              type: 'number',
+              placeholder: 'Nº Entregas',
+              value: r.count,
+              onChange: ev => handleRowChange(idx, 'count', ev.target.value),
+              className: 'w-full sm:w-32 bg-dark-input border border-dark-border rounded-xl p-2 text-xs text-white'
+            }),
+            e('input', {
+              type: 'number',
+              step: '0.01',
+              placeholder: 'Valor R$',
+              value: r.value,
+              onChange: ev => handleRowChange(idx, 'value', ev.target.value),
+              className: 'w-full sm:w-32 bg-dark-input border border-dark-border rounded-xl p-2 text-xs text-white'
+            })
+          )),
+          e('button', { type: 'button', onClick: handleAddRow, className: 'w-full py-2 border border-dashed border-dark-border rounded-xl text-xs text-brand-400 font-bold' }, '+ Adicionar Outra Loja')
+        ),
+        e('div', { className: 'bg-dark-card p-4 rounded-2xl border border-brand-500/30 flex justify-between items-center' },
+          e('span', { className: 'text-sm font-bold text-white' }, 'Soma do Envio:'),
+          e('div', { className: 'text-right' },
+            e('div', { className: 'text-xs text-slate-400' }, `${totalCount} entregas`),
+            e('div', { className: 'text-xl font-black text-brand-400' }, formatBRL(totalValue))
+          )
+        ),
+        e('button', { type: 'submit', className: 'w-full bg-brand-600 text-black font-black py-4 rounded-xl text-base' }, 'Finalizar e Enviar')
+      );
+    }
+
+    function DriverMyReports({ driverId, reports }) {
+      const myReps = reports.filter(r => r.driverId === driverId);
+      return e('div', { className: 'space-y-4' },
+        e('h2', { className: 'text-lg font-bold text-white' }, 'Meus Relatórios Enviados'),
+        myReps.map(r => e('div', { key: r.id, className: 'bg-dark-card p-4 rounded-2xl border border-dark-border space-y-2' },
+          e('div', { className: 'flex justify-between border-b border-dark-border pb-2' },
+            e('span', { className: 'font-mono text-xs text-brand-400 font-bold' }, formatDateBR(r.date)),
+            e('span', { className: 'font-black text-white text-sm' }, formatBRL(r.totalValue))
+          ),
+          r.items.map((it, idx) => e('div', { key: idx, className: 'flex justify-between text-xs text-slate-300' },
+            e('span', null, it.storeName),
+            e('span', null, `${it.count} ent. - ${formatBRL(it.value)}`)
+          ))
+        ))
+      );
+    }
+
+    function AdminMatrixReconciliation({ reports, stores, officialRecords, setOfficialRecords }) {
+      const [startDate, setStartDate] = useState(getSevenDaysAgoStr());
+      const [endDate, setEndDate] = useState(getTodayStr());
+      const dateRange = useMemo(() => generateDateRange(startDate, endDate), [startDate, endDate]);
+
+      const matrixData = useMemo(() => {
+        const lookup = {};
+        reports.forEach(r => {
+          if (r.date >= startDate && r.date <= endDate) {
+            r.items.forEach(it => {
+              if (!lookup[it.storeId]) lookup[it.storeId] = {};
+              if (!lookup[it.storeId][r.date]) lookup[it.storeId][r.date] = { count: 0, value: 0 };
+              lookup[it.storeId][r.date].count += (it.count || 0);
+              lookup[it.storeId][r.date].value += (it.value || 0);
+            });
+          }
+        });
+        return lookup;
+      }, [reports, startDate, endDate]);
+
+      return e('div', { className: 'space-y-6' },
+        e('div', { className: 'bg-dark-card p-4 rounded-2xl border border-dark-border flex flex-col sm:flex-row justify-between items-center gap-4' },
+          e('h2', { className: 'text-lg font-bold text-white' }, 'Batimento Dia a Dia por Período'),
+          e('div', { className: 'flex gap-2' },
+            e('input', { type: 'date', value: startDate, onChange: ev => setStartDate(ev.target.value), className: 'bg-dark-input text-xs text-white p-2 rounded-xl border border-dark-border' }),
+            e('input', { type: 'date', value: endDate, onChange: ev => setEndDate(ev.target.value), className: 'bg-dark-input text-xs text-white p-2 rounded-xl border border-dark-border' })
+          )
+        ),
+        e('div', { className: 'bg-dark-card rounded-2xl border border-dark-border overflow-x-auto' },
+          e('table', { className: 'w-full text-left text-xs border-collapse min-w-[650px]' },
+            e('thead', { className: 'bg-slate-900 text-slate-400' },
+              e('tr', null,
+                e('th', { className: 'p-3 font-semibold' }, 'Estabelecimento'),
+                dateRange.map(d => e('th', { key: d, className: 'p-3 text-center border-l border-dark-border' }, formatDateShort(d))),
+                e('th', { className: 'p-3 text-center border-l border-dark-border' }, 'Total Entregadores')
+              )
+            ),
+            e('tbody', { className: 'divide-y divide-dark-border' },
+              stores.map(st => {
+                let storeTotVal = 0;
+                let storeTotCnt = 0;
+                return e('tr', { key: st.id, className: 'hover:bg-dark-hover' },
+                  e('td', { className: 'p-3 font-bold text-white' }, st.name),
+                  dateRange.map(d => {
+                    const cell = matrixData[st.id]?.[d] || { count: 0, value: 0 };
+                    storeTotCnt += cell.count;
+                    storeTotVal += cell.value;
+                    return e('td', { key: d, className: 'p-2 text-center border-l border-dark-border font-mono' },
+                      cell.count > 0 ? e('div', null,
+                        e('div', { className: 'font-bold text-white' }, `${cell.count} ent.`),
+                        e('div', { className: 'text-brand-400 text-[10px]' }, formatBRL(cell.value))
+                      ) : e('span', { className: 'text-slate-600' }, '-')
+                    );
+                  }),
+                  e('td', { className: 'p-3 text-center border-l border-dark-border font-mono font-bold text-brand-400' },
+                    `${storeTotCnt} ent. - ${formatBRL(storeTotVal)}`
+                  )
+                );
+              })
+            )
+          )
+        )
+      );
+    }
+
+    function AdminGeneralReports({ reports, drivers, setReports }) {
+      return e('div', { className: 'space-y-4' },
+        e('h2', { className: 'text-lg font-bold text-white' }, 'Todos os Relatórios Recebidos'),
+        reports.map(r => e('div', { key: r.id, className: 'bg-dark-card p-4 rounded-2xl border border-dark-border space-y-2' },
+          e('div', { className: 'flex justify-between border-b border-dark-border pb-2' },
+            e('div', null,
+              e('span', { className: 'font-bold text-white text-sm block' }, r.driverName),
+              e('span', { className: 'text-xs text-slate-400' }, formatDateBR(r.date))
+            ),
+            e('span', { className: 'text-sm font-black text-brand-400' }, formatBRL(r.totalValue))
+          ),
+          r.items.map((it, idx) => e('div', { key: idx, className: 'flex justify-between text-xs text-slate-300' },
+            e('span', null, it.storeName),
+            e('span', null, `${it.count} ent. - ${formatBRL(it.value)}`)
+          ))
+        ))
+      );
+    }
+
+    function AdminManageDrivers({ drivers, setDrivers }) {
+      const [name, setName] = useState('');
+      const [pin, setPin] = useState('1234');
+
+      const handleAdd = (ev) => {
+        ev.preventDefault();
+        if (!name.trim()) return;
+        setDrivers([...drivers, { id: `${Date.now()}`, name: name.trim(), pin, active: true }]);
+        setName('');
+      };
+
+      return e('div', { className: 'space-y-4' },
+        e('h2', { className: 'text-lg font-bold text-white' }, 'Gestão de Entregadores'),
+        e('form', { onSubmit: handleAdd, className: 'flex gap-2' },
+          e('input', { type: 'text', placeholder: 'Nome', value: name, onChange: ev => setName(ev.target.value), className: 'flex-1 bg-dark-input border border-dark-border rounded-xl p-2 text-xs text-white' }),
+          e('input', { type: 'text', placeholder: 'PIN', value: pin, onChange: ev => setPin(ev.target.value), className: 'w-20 bg-dark-input border border-dark-border rounded-xl p-2 text-xs text-white text-center' }),
+          e('button', { type: 'submit', className: 'bg-brand-600 text-black font-bold px-4 py-2 rounded-xl text-xs' }, '+ Cadastrar')
+        ),
+        e('div', { className: 'bg-dark-card rounded-2xl border border-dark-border divide-y divide-dark-border' },
+          drivers.map(d => e('div', { key: d.id, className: 'p-3 flex justify-between items-center text-xs' },
+            e('span', { className: 'font-bold text-white' }, d.name),
+            e('span', { className: 'font-mono text-slate-400' }, `PIN: ${d.pin}`)
+          ))
+        )
+      );
+    }
+
+    function AdminManageStores({ stores, setStores }) {
+      const [name, setName] = useState('');
+
+      const handleAdd = (ev) => {
+        ev.preventDefault();
+        if (!name.trim()) return;
+        setStores([...stores, { id: `${Date.now()}`, name: name.trim() }]);
+        setName('');
+      };
+
+      return e('div', { className: 'space-y-4' },
+        e('h2', { className: 'text-lg font-bold text-white' }, 'Gestão de Estabelecimentos'),
+        e('form', { onSubmit: handleAdd, className: 'flex gap-2' },
+          e('input', { type: 'text', placeholder: 'Nome da Loja', value: name, onChange: ev => setName(ev.target.value), className: 'flex-1 bg-dark-input border border-dark-border rounded-xl p-2 text-xs text-white' }),
+          e('button', { type: 'submit', className: 'bg-brand-600 text-black font-bold px-4 py-2 rounded-xl text-xs' }, '+ Adicionar')
+        ),
+        e('div', { className: 'bg-dark-card rounded-2xl border border-dark-border divide-y divide-dark-border' },
+          stores.map(s => e('div', { key: s.id, className: 'p-3 text-xs font-bold text-white' }, s.name))
+        )
+      );
+    }
+
+    // Render React Application
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(e(App));
+  </script>
+</body>
+</html>
