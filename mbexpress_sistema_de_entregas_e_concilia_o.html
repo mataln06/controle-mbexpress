@@ -75,11 +75,12 @@
     }));
 
     const INITIAL_STORES = [
-      { id: '1', name: 'Burguer King - Centro' },
-      { id: '2', name: 'Restaurante Sabor Real' },
-      { id: '3', name: 'Pizzaria Bella Napoli' },
-      { id: '4', name: 'Sushi Bar Express' },
-      { id: '5', name: 'Padaria Pão D\'Ouro' }
+      { id: '1', name: 'Sartis Burguer' },
+      { id: '2', name: 'Frango da Sogra' },
+      { id: '3', name: 'Pizzaria da Gi' },
+      { id: '4', name: 'Yasushi' },
+      { id: '5', name: 'Kassab´s' }
+      { id: '6', name: 'Malie Poke' }
     ];
 
     const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -93,15 +94,14 @@
       {
         id: 'rep-101',
         driverId: '1',
-        driverName: 'Carlos Silva',
+        driverName: 'Zé do Grau',
         date: getTodayStr(),
         items: [
-          { storeId: '1', storeName: 'Burguer King - Centro', count: 12, value: 144.00 },
-          { storeId: '2', storeName: 'Restaurante Sabor Real', count: 8, value: 96.00 }
+         
         ],
-        totalCount: 20,
-        totalValue: 240.00,
-        obs: 'Entregas do almoço e janta.',
+        totalCount: ,
+        totalValue: ,
+        obs: 'Entregas extras.',
         createdAt: new Date().toISOString()
       },
       {
@@ -269,10 +269,10 @@
 
       const handleAdminLogin = (ev) => {
         ev.preventDefault();
-        if (adminPin === 'admin123' || adminPin === '8888') {
+        if (adminPin === '248877' || adminPin === '8888') {
           onLogin({ role: 'admin', id: 'admin', name: 'Administrador MBEXPRESS' });
         } else {
-          setErrorMsg('Senha Master Incorreta. (Padrão: admin123)');
+          setErrorMsg('Senha Master Incorreta. (Padrão: 248877)');
         }
       };
 
